@@ -1,0 +1,156 @@
+---
+title: "MLCourseProject"
+author: "Julio Fernandez"
+date: "9/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+```
+
+## Goals
+
+The goal of this project is to be able to predict how a particular exercise was done by each study subject. 
+To do this we will be using the data collected from different sensor to train a machine learning predictor that will then be apply to the data collected four our subjects of interest
+
+```{r Data acquisition}
+
+# Download training data
+if(!file.exists("data/pml-training.csv")) {
+    trainingURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    download.file(trainingURL, "data/pml-training.csv")
+}
+
+# Download testing data
+if(!file.exists("data/pml-testing.csv")) {
+
+    testingURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(testingURL, "data/pml-testing.csv")   
+}
+
+training <- read.csv("data/pml-training.csv")
+
+# The testing file doesn't contain the classe column so it can be used for validation but not for testing
+validation <- read.csv("data/pml-testing.csv")
+
+```
+
+## Initial data exploration and clean up
+We remove variables that have NA values, columns that won't be used as predictor variables and columns corresponding to variables with low variance
+
+```{r exploration}
+## Get a summary of all the different variables available in the dataset
+dim(training)
+#summary(training)
+
+#head(training)
+#colnames(training)
+
+## Get the list of outcomes available for the predictor
+unique(training$classe)
+
+# Remove columns that are not to be used
+columns2remove <- c("X", 
+                    "user_name", 
+                    "raw_timestamp_part_1", 
+                    "Raw_timestamp_part_2",
+                    "cvtd_timestamp",
+                    "new_window",
+                    "num_window")
+
+columns2remove <- which(colnames(training) %in% columns2remove)
+
+
+# Get list of columns with low variance
+columnsWithNearZeroVar <- nearZeroVar(training)
+#print(columnsWithNearZeroVar)
+
+#Combine the two sets of columns to remove
+columns2remove <- c(columns2remove, columnsWithNearZeroVar)
+
+# Remove the columns from the training set
+training.clean <- training[,-columns2remove]
+
+# Remove columns that contain NA values
+training.clean <- training.clean[ , colSums(is.na(training.clean)) == 0]
+
+dim(training.clean)
+```
+
+
+# Classes for exercise evaluation
+There are 5 different classes that can be predicted
+Class A corresponds to the correct execution of the exercise.
+The other 4 classes correspond to common mistakes
+
+```{r test}
+#head(training.clean)
+
+```
+
+##  Building the ML model.
+### Model training
+We are using Random Forrest for the prediction model.
+We are splitting the training set into two subset.
+Subset 1 will be used for model training
+Subset 2 will be used for model testing  and calculation of Error rate
+
+```{r train}
+# Set seed for reproducibility
+set.seed(98765)
+
+# Partition the training set into training and testing
+inTrain = createDataPartition(training.clean$classe, p = 0.7)[[1]]
+training.t = training.clean[ inTrain,]
+testing.t = training.clean[-inTrain,]
+
+```
+
+```{r crossvalidate}
+
+# Set crossvalidation
+numFolds <- trainControl(method = "cv", number = 3)
+
+## We use Random Forrest as the algorithm for prediction
+classModel <- train(classe ~ ., 
+                    data = training.t, 
+                    method = "rf",
+                    trControl = numFolds)
+
+```
+
+
+### Model testing
+```{r prediction}
+# Test the model on the testing set
+modelPred <- predict(classModel, testing.t)
+```
+
+Test for accuracy on the built model
+```{r accuracy}
+# Test for accuracy
+confusionMatrix(factor(testing.t$classe), modelPred)$overall[1]
+
+```
+We get a very high accuracy for the model ~99%
+
+### Model prediction
+Apply the created model to the 20 new cases to predict their classe
+
+```{r validation}
+modelVal <- predict(classModel, validation)
+modelVal
+
+```
+
+### Apendix. Random Forrest Tree Visualization
+```{r plot}
+treeModel <- rpart(classe ~ ., data=training.t, method="class")
+rpart.plot(treeModel)
+```
+
